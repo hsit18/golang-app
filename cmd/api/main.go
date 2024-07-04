@@ -1,7 +1,18 @@
 package main
 
-import "fmt"
+import (
+	"log"
+
+	"github.com/hsit18/golang-app/internal/customhttphandler"
+	"github.com/joho/godotenv"
+)
 
 func main() {
-	fmt.Println("API to be implemented")
+	log.Println("API Services... ")
+	err := godotenv.Load()
+	if err != nil {
+		log.Fatal("Error loading environment variable ", err)
+	}
+
+	go customhttphandler.NewServer()
 }
