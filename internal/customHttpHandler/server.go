@@ -1,14 +1,19 @@
 package customhttphandler
 
 import (
+	"context"
 	"fmt"
+	"log"
 	"net/http"
 	"os"
 	"time"
 )
 
-func NewServer() *http.Server {
-	myServer := &http.Server{
+var myServer *http.Server
+
+func StartServer() {
+
+	myServer = &http.Server{
 		Addr:         fmt.Sprintf(":%s", os.Getenv("HTTP_PORT")),
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 10 * time.Second,
@@ -18,5 +23,9 @@ func NewServer() *http.Server {
 	})
 
 	myServer.ListenAndServe()
-	return myServer
+}
+
+func StopServer(shutdownCtx context.Context) error {
+	log.Println("Shutting down the server...")
+	return myServer.Shutdown(shutdownCtx)
 }

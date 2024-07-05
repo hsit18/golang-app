@@ -2,7 +2,7 @@ run:
 	@./bin/goapps
 
 run-dev:
-	@go run cmd/api/main.go
+	@go run cmd/api/main.go || true
 
 build:
 	@go build -o bin/goapps cmd/api/main.go
