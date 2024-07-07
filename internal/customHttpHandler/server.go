@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"text/template"
 	"time"
 )
 
@@ -18,6 +19,23 @@ func StartServer() {
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 10 * time.Second,
 	}
+
+	type Todo struct {
+		Id      int
+		Message string
+	}
+
+	data := map[string][]Todo{
+		"Todos": {
+			Todo{Id: 1, Message: "Hello Todo"},
+		},
+	}
+
+	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+
+		templ := template.Must(template.ParseFiles("public/index.html"))
+		templ.Execute(w, data)
+	})
 	http.HandleFunc("/hello", func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("Hello World"))
 	})
