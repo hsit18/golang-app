@@ -11,21 +11,34 @@ import (
 	"time"
 
 	"github.com/gorilla/mux"
+	"github.com/hsit18/golang-app/internal/kafka"
 )
 
 var myServer *http.Server
 
 func NewServer() {
+	// Initialize Kafka producer
+	if err := kafka.InitProducer(); err != nil {
+		log.Printf("Warning: Failed to initialize Kafka producer: %v", err)
+	}
+
 	myServer = &http.Server{
 		Addr:         fmt.Sprintf(":%s", os.Getenv("MUX_HTTP_PORT")),
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 10 * time.Second,
 	}
 	router := mux.NewRouter()
+
+	// Health check endpoint
 	router.HandleFunc("/api/health", func(w http.ResponseWriter, r *http.Request) {
 		// an example API handler
 		json.NewEncoder(w).Encode(map[string]bool{"ok": true})
 	})
+
+	// Kafka endpoints
+	router.HandleFunc("/api/kafka/send", handleKafkaSend).Methods("POST")
+	router.HandleFunc("/api/kafka/send-async", handleKafkaSendAsync).Methods("POST")
+
 	myServer.Handler = router
 	if err := myServer.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
 		log.Fatalf("HTTP server error: %v", err)
@@ -33,7 +46,102 @@ func NewServer() {
 	log.Println("Stopped serving new connections.")
 }
 
+// KafkaMessage represents the structure for Kafka message requests
+type KafkaMessage struct {
+	Topic   string      `json:"topic"`
+	Key     string      `json:"key"`
+	Message interface{} `json:"message"`
+}
+
+// handleKafkaSend handles synchronous Kafka message sending
+func handleKafkaSend(w http.ResponseWriter, r *http.Request) {
+	var msg KafkaMessage
+	if err := json.NewDecoder(r.Body).Decode(&msg); err != nil {
+		http.Error(w, "Invalid JSON payload", http.StatusBadRequest)
+		return
+	}
+
+	if msg.Topic == "" {
+		http.Error(w, "Topic is required", http.StatusBadRequest)
+		return
+	}
+
+	producer := kafka.GetProducer()
+	if producer == nil {
+		http.Error(w, "Kafka producer not available", http.StatusServiceUnavailable)
+		return
+	}
+
+	var err error
+	switch v := msg.Message.(type) {
+	case string:
+		err = producer.SendMessage(msg.Topic, msg.Key, v)
+	default:
+		err = producer.SendJSONMessage(msg.Topic, msg.Key, msg.Message)
+	}
+
+	if err != nil {
+		log.Printf("Failed to send Kafka message: %v", err)
+		http.Error(w, "Failed to send message", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+		"message": "Message sent successfully",
+		"topic":   msg.Topic,
+		"key":     msg.Key,
+	})
+}
+
+// handleKafkaSendAsync handles asynchronous Kafka message sending
+func handleKafkaSendAsync(w http.ResponseWriter, r *http.Request) {
+	var msg KafkaMessage
+	if err := json.NewDecoder(r.Body).Decode(&msg); err != nil {
+		http.Error(w, "Invalid JSON payload", http.StatusBadRequest)
+		return
+	}
+
+	if msg.Topic == "" {
+		http.Error(w, "Topic is required", http.StatusBadRequest)
+		return
+	}
+
+	producer := kafka.GetProducer()
+	if producer == nil {
+		http.Error(w, "Kafka producer not available", http.StatusServiceUnavailable)
+		return
+	}
+
+	var err error
+	switch v := msg.Message.(type) {
+	case string:
+		err = producer.SendMessageAsync(msg.Topic, msg.Key, v)
+	default:
+		err = producer.SendJSONMessageAsync(msg.Topic, msg.Key, msg.Message)
+	}
+
+	if err != nil {
+		log.Printf("Failed to send async Kafka message: %v", err)
+		http.Error(w, "Failed to send message", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+		"message": "Message queued for sending",
+		"topic":   msg.Topic,
+		"key":     msg.Key,
+	})
+}
+
 func StopServer(shutdownCtx context.Context) error {
 	log.Println("Shutting down the MUX server...")
+
+	// Close Kafka producer
+	kafka.CloseProducer()
+
 	return myServer.Shutdown(shutdownCtx)
 }
