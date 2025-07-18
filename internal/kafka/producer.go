@@ -17,12 +17,13 @@ type Producer struct {
 func NewProducer() (*Producer, error) {
 	// Kafka configuration
 	config := &kafka.ConfigMap{
-		"bootstrap.servers": os.Getenv("KAFKA_BOOTSTRAP_SERVERS"),
-		"client.id":         os.Getenv("KAFKA_CLIENT_ID"),
-		"acks":              "all",
-		"retries":           3,
-		"batch.size":        16384,
-		"linger.ms":         1,
+		"bootstrap.servers":     os.Getenv("KAFKA_BOOTSTRAP_SERVERS"),
+		"client.id":             os.Getenv("KAFKA_CLIENT_ID"),
+		"acks":                  "all",
+		"retries":               3,
+		"batch.size":            16384,
+		"linger.ms":             1,
+		"broker.address.family": "v4",
 	}
 
 	// Add security configuration if provided

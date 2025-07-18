@@ -22,6 +22,11 @@ func NewServer() {
 		log.Printf("Warning: Failed to initialize Kafka producer: %v", err)
 	}
 
+	// Initialize Kafka consumer
+	if err := kafka.InitConsumer(); err != nil {
+		log.Printf("Warning: Failed to initialize Kafka consumer: %v", err)
+	}
+
 	myServer = &http.Server{
 		Addr:         fmt.Sprintf(":%s", os.Getenv("MUX_HTTP_PORT")),
 		ReadTimeout:  10 * time.Second,
@@ -38,6 +43,9 @@ func NewServer() {
 	// Kafka endpoints
 	router.HandleFunc("/api/kafka/send", handleKafkaSend).Methods("POST")
 	router.HandleFunc("/api/kafka/send-async", handleKafkaSendAsync).Methods("POST")
+
+	// Consumer management endpoints
+	router.HandleFunc("/api/kafka/consumer/status", handleConsumerStatus).Methods("GET")
 
 	myServer.Handler = router
 	if err := myServer.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
@@ -137,8 +145,55 @@ func handleKafkaSendAsync(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// handleConsumerStatus returns the status of the Kafka consumer
+func handleConsumerStatus(w http.ResponseWriter, r *http.Request) {
+	consumer := kafka.GetConsumer()
+
+	status := map[string]interface{}{
+		"consumer_initialized": consumer != nil,
+		"timestamp":            time.Now().Format("2006-01-02 15:04:05"),
+	}
+
+	if consumer != nil {
+		// Get assignment information
+		assignment, err := consumer.GetAssignment()
+		if err != nil {
+			status["assignment_error"] = err.Error()
+		} else {
+			var assignmentInfo []map[string]interface{}
+			for _, tp := range assignment {
+				assignmentInfo = append(assignmentInfo, map[string]interface{}{
+					"topic":     *tp.Topic,
+					"partition": tp.Partition,
+					"offset":    tp.Offset,
+				})
+			}
+			status["assignment"] = assignmentInfo
+		}
+
+		// Get metadata
+		metadata, err := consumer.GetMetadata(5000)
+		if err != nil {
+			status["metadata_error"] = err.Error()
+		} else {
+			var topics []string
+			for topicName := range metadata.Topics {
+				topics = append(topics, topicName)
+			}
+			status["available_topics"] = topics
+			status["broker_count"] = len(metadata.Brokers)
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(status)
+}
+
 func StopServer(shutdownCtx context.Context) error {
 	log.Println("Shutting down the MUX server...")
+
+	// Close Kafka consumer
+	kafka.CloseConsumer()
 
 	// Close Kafka producer
 	kafka.CloseProducer()
